@@ -4,6 +4,10 @@ A browser-based pixel art editor for creating LED matrix displays compatible wit
 
 Primarily designed for use with [UMP](https://github.com/suchyindustries/UnexpectedMatrixPixels/tree/main) and Home Assistant
 
+[Live demo](https://boomyville.github.io/pixel-painter/)
+
+<img width="1330" height="867" alt="image" src="https://github.com/user-attachments/assets/ea1ea742-567a-4c7a-b87c-f921948b2520" />
+
 ## Features
 
 - **Interactive Grid**: Draw pixel art on customizable grid sizes (up to 96×96)
