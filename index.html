@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boomy Pixel Painter</title>
+    <style>
+        :root { --accent: #e91e63; --bg: #121212; --panel: #1e1e1e; --text: #e0e0e0; }
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; }
+        
+        .hero-instructions { background: var(--panel); border-radius: 12px; padding: 15px; margin-bottom: 20px; width: 100%; max-width: 1000px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; border: 1px solid #333; }
+        .inst-card h4 { margin: 0 0 5px 0; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; }
+        .inst-card p { margin: 0; font-size: 0.8rem; color: #bbb; }
+
+        .controls { background: var(--panel); padding: 15px; border-radius: 12px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-bottom: 15px; border: 1px solid #333; }
+        
+        .palette-container { display: flex; gap: 10px; align-items: center; background: #252525; padding: 10px 20px; border-radius: 50px; margin-bottom: 20px; border: 1px solid #333; }
+        .swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: 0.2s; background: #333; }
+        .swatch.active { border-color: white; box-shadow: 0 0 12px var(--accent); transform: scale(1.1); }
+        .eraser-swatch { border: 2px dashed #ff4444; color: #ff4444; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+
+        #grid-container { overflow: auto; max-height: 60vh; max-width: 90vw; border: 2px solid #444; background: #000; border-radius: 4px; }
+        #grid { display: grid; background: #1a1a1a; }
+        .cell { width: 24px; height: 24px; border: 1px solid #222; box-sizing: border-box; }
+
+        .layout { display: flex; flex-wrap: wrap; gap: 30px; justify-content: center; width: 100%; }
+        .io-section { display: flex; flex-direction: column; gap: 10px; min-width: 420px; }
+        
+        textarea { width: 100%; height: 380px; background: #000; color: #0f0; font-family: 'Consolas', monospace; padding: 15px; border-radius: 8px; border: 1px solid #333; font-size: 0.8rem; resize: none; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 10px; }
+        button { padding: 10px 18px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; background: #333; color: white; }
+        button.primary { background: var(--accent); }
+        button.success-btn { background: #2e7d32; }
+        .status-msg { font-size: 0.8rem; height: 1.2rem; margin-bottom: 2px; }
+        .success { color: #00ff00; } .error { color: #ff4444; }
+        
+        .hist-btns { display: flex; gap: 5px; border-left: 1px solid #444; padding-left: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2 style="margin-bottom: 15px;">Boomy Pixel <span style="color: var(--accent)">Painter</span> v7</h2>
+
+    <div class="hero-instructions">
+        <div class="inst-card"><h4>Mouse</h4><p>Left: Paint | Right: Fill</p></div>
+        <div class="inst-card"><h4>History</h4><p>Ctrl+Z: Undo | Ctrl+Y: Redo</p></div>
+        <div class="inst-card"><h4>Shortcuts</h4><p>X: Eraser | PNG: Transparent Export</p></div>
+    </div>
+
+    <div class="controls">
+        <label>Entity: <input type="text" id="entity_id" value="display_7b3db4" style="width: 120px; padding: 5px;"></label>
+        <div style="display: flex; gap: 5px;">
+            Size: <input type="number" id="grid_w" value="16" min="1" max="96" style="width: 45px;"> x 
+            <input type="number" id="grid_h" value="16" min="1" max="96" style="width: 45px;">
+        </div>
+        <button class="primary" onclick="rebuildGrid()">Update Grid</button>
+        <input type="color" id="colorPicker" value="#ffffff" oninput="manualColorPick(this.value)">
+    </div>
+
+    <div class="palette-container">
+        <div id="palette" style="display: flex; gap: 8px;"></div>
+        <div id="eraser" class="swatch eraser-swatch" onclick="setEraser()" title="Eraser Tool (X)">X</div>
+        <div class="hist-btns">
+            <button onclick="undo()" title="Undo (Ctrl+Z)">↶</button>
+            <button onclick="redo()" title="Redo (Ctrl+Y)">↷</button>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div style="display: flex; flex-direction: column; align-items: center;">
+            <div id="grid-container">
+                <div id="grid" oncontextmenu="return false;"></div>
+            </div>
+            <div id="hist-stat" style="font-size: 11px; color: #666; margin-top: 10px;">History: 1/50</div>
+        </div>
+
+        <div class="io-section">
+            <div id="validator-msg" class="status-msg"></div>
+            <textarea id="yaml-io" placeholder="YAML output / Import area..."></textarea>
+            <div class="btn-group">
+                <button class="primary" onclick="importYAML()">Import YAML</button>
+                <button onclick="copyToClipboard()">Copy YAML</button>
+                <button class="success-btn" onclick="exportToPNG()">Export PNG</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="exportCanvas" style="display:none;"></canvas>
+
+    <script>
+        const gridElement = document.getElementById('grid');
+        const yamlTextArea = document.getElementById('yaml-io');
+        const entityInput = document.getElementById('entity_id');
+        const colorPicker = document.getElementById('colorPicker');
+        const paletteElement = document.getElementById('palette');
+        const validatorMsg = document.getElementById('validator-msg');
+        
+        let cells = [];
+        let currentColor = "#ffffff";
+        let isEraser = false;
+        let activeColors = [];
+        let undoStack = [];
+        let redoStack = [];
+
+        function setStatus(msg, type) {
+            validatorMsg.innerText = msg;
+            validatorMsg.className = 'status-msg ' + type;
+        }
+
+        function hexToRgb(hex) {
+            const res = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return res ? [parseInt(res[1], 16), parseInt(res[2], 16), parseInt(res[3], 16)] : [0,0,0];
+        }
+
+        function rgbToHex(r, g, b) {
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+
+        function rebuildGrid(wIn, hIn) {
+            const w = wIn || Math.min(document.getElementById('grid_w').value, 96);
+            const h = hIn || Math.min(document.getElementById('grid_h').value, 96);
+            gridElement.style.gridTemplateColumns = `repeat(${w}, 24px)`;
+            gridElement.innerHTML = '';
+            cells = [];
+            for (let y = 0; y < h; y++) {
+                cells[y] = [];
+                for (let x = 0; x < w; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = x; cell.dataset.y = y;
+                    cell.addEventListener('mousedown', (e) => {
+                        if (e.button === 0) paint(x, y);
+                        if (e.button === 2) { floodFill(x, y); finishAction(); }
+                    });
+                    cell.addEventListener('mouseup', () => finishAction());
+                    cell.addEventListener('mouseover', (e) => { if (e.buttons === 1) paint(x, y); });
+                    gridElement.appendChild(cell);
+                    cells[y][x] = cell;
+                }
+            }
+            undoStack = []; redoStack = []; scanCanvasColors(); saveHistory(); generateYAML();
+        }
+
+        function scanCanvasColors() {
+            const colorsFound = new Set();
+            cells.flat().forEach(c => { if(c.dataset.color) colorsFound.add(c.dataset.color); });
+            activeColors = Array.from(colorsFound).slice(0, 8);
+            const defaults = ["#ffffff", "#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#ffa500"];
+            while(activeColors.length < 8) {
+                const nextDef = defaults.find(d => !activeColors.includes(d));
+                if(!nextDef) break;
+                activeColors.push(nextDef);
+            }
+            updatePaletteUI();
+        }
+
+        function updatePaletteUI() {
+            paletteElement.innerHTML = '';
+            activeColors.forEach(color => {
+                const s = document.createElement('div');
+                s.className = `swatch ${currentColor === color && !isEraser ? 'active' : ''}`;
+                s.style.backgroundColor = color;
+                s.onclick = () => { currentColor = color; isEraser = false; updatePaletteUI(); };
+                paletteElement.appendChild(s);
+            });
+            document.getElementById('eraser').className = `swatch eraser-swatch ${isEraser ? 'active' : ''}`;
+        }
+
+        function manualColorPick(val) {
+            isEraser = false; currentColor = val;
+            if (!activeColors.includes(val)) {
+                activeColors.unshift(val);
+                if (activeColors.length > 8) activeColors.pop();
+            }
+            updatePaletteUI();
+        }
+
+        function finishAction() {
+            scanCanvasColors();
+            saveHistory();
+        }
+
+        function paint(x, y) {
+            const cell = cells[y][x];
+            const col = isEraser ? '' : currentColor;
+            if (cell.dataset.color === col) return;
+            cell.style.backgroundColor = isEraser ? '#1a1a1a' : col;
+            cell.dataset.color = col;
+            generateYAML();
+        }
+
+        function floodFill(x, y) {
+            const target = cells[y][x].dataset.color || '';
+            const fill = isEraser ? '' : currentColor;
+            if (target === fill) return;
+            const stack = [[x, y]];
+            while (stack.length > 0) {
+                const [cx, cy] = stack.pop();
+                if ((cells[cy][cx].dataset.color || '') === target) {
+                    cells[cy][cx].style.backgroundColor = isEraser ? '#1a1a1a' : fill;
+                    cells[cy][cx].dataset.color = fill;
+                    if (cx > 0) stack.push([cx - 1, cy]);
+                    if (cx < cells[0].length - 1) stack.push([cx + 1, cy]);
+                    if (cy > 0) stack.push([cx, cy - 1]);
+                    if (cy < cells.length - 1) stack.push([cx, cy + 1]);
+                }
+            }
+            generateYAML();
+        }
+
+        function importYAML() {
+            try {
+                const val = yamlTextArea.value;
+                const pixelMatch = val.match(/pixels:\s*([\s\S]*?)(?=\s*type:|\s*action:|$)/);
+                if (!pixelMatch) throw new Error("No 'pixels:' found");
+                const lines = pixelMatch[1].trim().split('\n');
+                const pixelData = [];
+                let maxW = 0, maxH = 0;
+                lines.forEach(line => {
+                    const m = line.match(/\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]/);
+                    if (m) {
+                        const [_, x, y, r, g, b] = m.map(Number);
+                        pixelData.push({x, y, hex: rgbToHex(r,g,b)});
+                        if (x > maxW) maxW = x; if (y > maxH) maxH = y;
+                    }
+                });
+                document.getElementById('grid_w').value = maxW + 1;
+                document.getElementById('grid_h').value = maxH + 1;
+                rebuildGrid(maxW + 1, maxH + 1);
+                pixelData.forEach(p => {
+                    cells[p.y][p.x].style.backgroundColor = p.hex;
+                    cells[p.y][p.x].dataset.color = p.hex;
+                });
+                setStatus("Imported!", "success");
+                finishAction(); generateYAML();
+            } catch (e) { setStatus("Error: " + e.message, "error"); }
+        }
+
+        function saveHistory() {
+            const snap = JSON.stringify(cells.map(row => row.map(c => c.dataset.color || '')));
+            if(undoStack.length > 0 && undoStack[undoStack.length-1] === snap) return;
+            undoStack.push(snap);
+            if (undoStack.length > 50) undoStack.shift();
+            redoStack = []; // Reset redo stack on new action
+            updateHistoryUI();
+        }
+
+        function undo() {
+            if (undoStack.length <= 1) return;
+            redoStack.push(undoStack.pop());
+            applySnapshot(undoStack[undoStack.length - 1]);
+            updateHistoryUI();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const snap = redoStack.pop();
+            undoStack.push(snap);
+            applySnapshot(snap);
+            updateHistoryUI();
+        }
+
+        function applySnapshot(snapStr) {
+            const data = JSON.parse(snapStr);
+            data.forEach((row, y) => row.forEach((col, x) => {
+                cells[y][x].dataset.color = col;
+                cells[y][x].style.backgroundColor = col === '' ? '#1a1a1a' : col;
+            }));
+            scanCanvasColors(); generateYAML();
+        }
+
+        function updateHistoryUI() {
+            document.getElementById('hist-stat').innerText = `History: ${undoStack.length}/50`;
+        }
+
+        function generateYAML() {
+            const id = entityInput.value;
+            let yaml = `target:\n  entity_id: light.${id}\ndata:\n  elements:\n    - type: pixels\n      pixels:\n`;
+            cells.flat().forEach(c => {
+                if (c.dataset.color) {
+                    const rgb = hexToRgb(c.dataset.color);
+                    yaml += `        - [${c.dataset.x}, ${c.dataset.y}, ${rgb[0]}, ${rgb[1]}, ${rgb[2]}]\n`;
+                }
+            });
+            yaml += `action: ump.draw_visuals`;
+            yamlTextArea.value = yaml;
+        }
+
+        function exportToPNG() {
+            const w = cells[0].length, h = cells.length;
+            const canvas = document.getElementById('exportCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = w; canvas.height = h;
+            ctx.clearRect(0, 0, w, h);
+            cells.forEach((row, y) => row.forEach((cell, x) => {
+                if (cell.dataset.color) { ctx.fillStyle = cell.dataset.color; ctx.fillRect(x, y, 1, 1); }
+            }));
+            const link = document.createElement('a');
+            link.download = `matrix-art-${new Date().getTime()}.png`;
+            link.href = canvas.toDataURL('image/png'); link.click();
+            setStatus("PNG Exported!", "success");
+        }
+
+        function setEraser() { isEraser = true; updatePaletteUI(); }
+        function copyToClipboard() { yamlTextArea.select(); document.execCommand('copy'); setStatus("Copied!", "success"); }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+            if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
+            if (e.key.toLowerCase() === 'x') { setEraser(); }
+        });
+
+        rebuildGrid();
+    </script>
+</body>
+</html>
