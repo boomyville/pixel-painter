@@ -90,8 +90,10 @@
             <div style="display: flex; gap: 10px;">
                 <button class="primary" onclick="importYAML()" style="flex: 1;">Import YAML</button>
                 <button onclick="copyToClipboard()" style="flex: 1;">Copy YAML</button>
-                <button onclick="exportToPNG()" style="background: #2e7d32;">PNG</button>
+                <button onclick="document.getElementById('pngInput').click()" style="background: #1976d2;">Import PNG</button>
+                <button onclick="exportToPNG()" style="background: #2e7d32;">Export PNG</button>
             </div>
+            <input type="file" id="pngInput" accept="image/png" style="display:none" onchange="importPNG(this)">
         </div>
     </div>
 
@@ -255,6 +257,54 @@
                 pix.forEach(p => { cells[p.y][p.x].style.backgroundColor = p.h; cells[p.y][p.x].dataset.color = p.h; });
                 finishAction(); generateYAML();
             } catch (e) { alert(e.message); }
+        }
+
+        function importPNG(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const w = img.width;
+                        const h = img.height;
+                        if (w > 96 || h > 96) {
+                            if (!confirm(`Image size (${w}x${h}) is larger than recommended (96x96). Continue?`)) return;
+                        }
+                        
+                        document.getElementById('grid_w').value = w;
+                        document.getElementById('grid_h').value = h;
+                        rebuildGrid(w, h);
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const data = ctx.getImageData(0, 0, w, h).data;
+
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const i = (y * w + x) * 4;
+                                const r = data[i];
+                                const g = data[i + 1];
+                                const b = data[i + 2];
+                                const a = data[i + 3];
+
+                                if (a > 128) { // Only opaque-ish pixels
+                                    const hex = rgbToHex(r, g, b);
+                                    cells[y][x].style.backgroundColor = hex;
+                                    cells[y][x].dataset.color = hex;
+                                }
+                            }
+                        }
+                        finishAction();
+                        generateYAML();
+                        input.value = ''; // Reset input
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
         }
 
         function exportToPNG() {
