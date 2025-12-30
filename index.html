@@ -86,6 +86,10 @@
             <div id="hist-stat" style="font-size: 11px; color: #666; margin-top: 10px;">History: 1/50</div>
         </div>
         <div class="io-section">
+            <div id="preview-container" style="display:none; margin-bottom: 10px; background: #222; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #333;">
+                <div style="font-size: 0.8rem; color: #888; margin-bottom: 5px;">Imported Image</div>
+                <img id="importedImage" style="max-width: 100%; max-height: 200px; image-rendering: pixelated; border: 1px solid #444;">
+            </div>
             <textarea id="yaml-io" placeholder="YAML output / Import area..."></textarea>
             <div style="display: flex; gap: 10px;">
                 <button class="primary" onclick="importYAML()" style="flex: 1;">Import YAML</button>
@@ -263,43 +267,74 @@
             if (input.files && input.files[0]) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
+                    const pContainer = document.getElementById('preview-container');
+                    const pImg = document.getElementById('importedImage');
+                    if(pContainer && pImg) {
+                        pImg.src = e.target.result;
+                        pContainer.style.display = 'block';
+                    }
+
                     const img = new Image();
+                    // Add crossOrigin to prevent "tainted canvas" errors
+                    img.crossOrigin = "Anonymous"; 
+                    
                     img.onload = function() {
-                        const w = img.width;
-                        const h = img.height;
-                        if (w > 96 || h > 96) {
-                            if (!confirm(`Image size (${w}x${h}) is larger than recommended (96x96). Continue?`)) return;
-                        }
+                        let w = img.width;
+                        let h = img.height;
                         
+                        const MAX_SIZE = 64;
+                        if (w > MAX_SIZE || h > MAX_SIZE) {
+                            const ratio = Math.min(MAX_SIZE / w, MAX_SIZE / h);
+                            w = Math.floor(w * ratio);
+                            h = Math.floor(h * ratio);
+                        }
+
+                        w = Math.max(1, w);
+                        h = Math.max(1, h);
+
                         document.getElementById('grid_w').value = w;
                         document.getElementById('grid_h').value = h;
+                        
+                        // Rebuild grid FIRST
                         rebuildGrid(w, h);
 
                         const canvas = document.createElement('canvas');
                         canvas.width = w;
                         canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-                        const data = ctx.getImageData(0, 0, w, h).data;
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        
+                        ctx.imageSmoothingEnabled = false; 
+                        ctx.drawImage(img, 0, 0, w, h); 
+                        
+                        try {
+                            const imgData = ctx.getImageData(0, 0, w, h);
+                            const data = imgData.data;
 
-                        for (let y = 0; y < h; y++) {
-                            for (let x = 0; x < w; x++) {
-                                const i = (y * w + x) * 4;
-                                const r = data[i];
-                                const g = data[i + 1];
-                                const b = data[i + 2];
-                                const a = data[i + 3];
+                            for (let y = 0; y < h; y++) {
+                                for (let x = 0; x < w; x++) {
+                                    const i = (y * w + x) * 4;
+                                    const r = data[i];
+                                    const g = data[i + 1];
+                                    const b = data[i + 2];
+                                    const a = data[i + 3];
 
-                                if (a > 128) { // Only opaque-ish pixels
-                                    const hex = rgbToHex(r, g, b);
-                                    cells[y][x].style.backgroundColor = hex;
-                                    cells[y][x].dataset.color = hex;
+                                    // Only paint pixels that aren't fully transparent
+                                    if (a > 50) { 
+                                        const hex = rgbToHex(r, g, b);
+                                        if (cells[y] && cells[y][x]) {
+                                            cells[y][x].style.backgroundColor = hex;
+                                            cells[y][x].dataset.color = hex;
+                                        }
+                                    }
                                 }
                             }
+                            finishAction();
+                            generateYAML();
+                        } catch (err) {
+                            console.error("Canvas read error:", err);
+                            alert("Could not read image data. Try a smaller PNG or a different browser.");
                         }
-                        finishAction();
-                        generateYAML();
-                        input.value = ''; // Reset input
+                        input.value = ''; 
                     };
                     img.src = e.target.result;
                 };
