@@ -90,6 +90,9 @@
                 <div style="font-size: 0.8rem; color: #888; margin-bottom: 5px;">Imported Image</div>
                 <img id="importedImage" style="max-width: 100%; max-height: 200px; image-rendering: pixelated; border: 1px solid #444;">
             </div>
+            <label style="display:flex; align-items:center; gap:8px; font-size:0.9rem; margin-bottom:5px; cursor:pointer; color:#bbb;">
+                <input type="checkbox" id="simpleOutput" onchange="generateYAML()"> Output Pixel Data Only
+            </label>
             <textarea id="yaml-io" placeholder="YAML output / Import area..."></textarea>
             <div style="display: flex; gap: 10px;">
                 <button class="primary" onclick="importYAML()" style="flex: 1;">Import YAML</button>
@@ -242,9 +245,18 @@
         }
 
         function generateYAML() {
-            let yaml = `target:\n  entity_id: light.${entityInput.value}\ndata:\n  elements:\n    - type: pixels\n      pixels:\n`;
+            const simple = document.getElementById('simpleOutput') && document.getElementById('simpleOutput').checked;
+            let yaml = '';
+            if (!simple) {
+                yaml += `target:\n  entity_id: light.${entityInput.value}\ndata:\n  elements:\n`;
+            }
+            yaml += `    - type: pixels\n      pixels:\n`;
             cells.flat().forEach(c => { if (c.dataset.color) { const rgb = hexToRgb(c.dataset.color); yaml += `        - [${c.dataset.x}, ${c.dataset.y}, ${rgb[0]}, ${rgb[1]}, ${rgb[2]}]\n`; } });
-            yaml += `action: ump.draw_visuals`; yamlTextArea.value = yaml;
+            
+            if (!simple) {
+                yaml += `action: ump.draw_visuals`; 
+            }
+            yamlTextArea.value = yaml;
         }
 
         function importYAML() {
